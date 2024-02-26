@@ -1,17 +1,16 @@
 package de.kxmischesdomi.just_end_anchor.common.blocks;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableList.Builder;
-import com.google.common.collect.UnmodifiableIterator;
 import de.kxmischesdomi.just_end_anchor.common.entities.EndAnchorBlockEntity;
 import de.kxmischesdomi.just_end_anchor.common.registry.ModBlockEntities;
 import de.kxmischesdomi.just_end_anchor.common.registry.ModBlocks;
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.BlockSource;
-import net.minecraft.core.Direction;
-import net.minecraft.core.Vec3i;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableList.Builder;
+import com.google.common.collect.UnmodifiableIterator;
+import de.kxmischesdomi.just_end_anchor.enums.EndAnchorType;
+import net.minecraft.core.*;
 import net.minecraft.core.dispenser.OptionalDispenseItemBehavior;
 import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -49,6 +48,7 @@ import java.util.stream.Stream;
 
 /**
  * @author KxmischesDomi | https://github.com/kxmischesdomi
+ * @author BataBo | https://github.com/BataBo/EndAnchorExtended
  * @since 1.0
  */
 public class EndAnchorBlock extends Block implements EntityBlock {
@@ -56,34 +56,46 @@ public class EndAnchorBlock extends Block implements EntityBlock {
 	public static final int NO_CHARGES = 0;
 	public static final int MAX_CHARGES = 4;
 	public static final IntegerProperty CHARGES;
+
+	public static final  Random random = new Random();
+
 	private static final ImmutableList<Vec3i> VALID_HORIZONTAL_SPAWN_OFFSETS;
 	private static final ImmutableList<Vec3i> VALID_SPAWN_OFFSETS;
 
 	public EndAnchorBlock(BlockBehaviour.Properties settings) {
 		super(settings);
 		this.registerDefaultState((this.stateDefinition.any()).setValue(CHARGES, 0));
+
+
 	}
 
 	public InteractionResult use(BlockState state, Level world, BlockPos pos, Player player, InteractionHand hand, BlockHitResult hit) {
+		CompoundTag tag = ((EndAnchorBlockEntity)world.getBlockEntity(pos)).getUpdateTag();
+		EndAnchorType endAnchorType = EndAnchorBlockEntity.getEndAnchorType(tag);
 		ItemStack itemStack = player.getItemInHand(hand);
 		if (hand == InteractionHand.MAIN_HAND && !isChargeItem(itemStack) && isChargeItem(player.getItemInHand(InteractionHand.OFF_HAND))) {
 			return InteractionResult.PASS;
-		} else if (isChargeItem(itemStack) && canCharge(state)) {
+		}
+		else if (isChargeItem(itemStack) && canCharge(state)) {
 			charge(world, pos, state);
 			if (!player.getAbilities().instabuild) {
 				itemStack.shrink(1);
 			}
 
 			return InteractionResult.sidedSuccess(world.isClientSide);
-		} else if (state.getValue(CHARGES) == 0) {
+		}
+		else if (state.getValue(CHARGES) == 0) {
 			return InteractionResult.PASS;
-		} else if (!isEnd(world)) {
+		}
+		else if (!isEnd(world)) {
 			if (!world.isClientSide) {
 				this.explode(state, world, pos);
 			}
 
 			return InteractionResult.sidedSuccess(world.isClientSide);
-		} else {
+		}
+		if(endAnchorType == EndAnchorType.RespawnAnchor)
+		{
 			if (!world.isClientSide) {
 				ServerPlayer serverPlayerEntity = (ServerPlayer)player;
 				if (serverPlayerEntity.getRespawnDimension() != world.dimension() || !pos.equals(serverPlayerEntity.getRespawnPosition())) {
@@ -92,8 +104,63 @@ public class EndAnchorBlock extends Block implements EntityBlock {
 					return InteractionResult.SUCCESS;
 				}
 			}
-
 			return InteractionResult.CONSUME;
+		}
+		else if(endAnchorType == EndAnchorType.RecoveryTeleporter)
+		{
+			Optional<GlobalPos> deathPosition = player.getLastDeathLocation();
+			if(deathPosition.isEmpty())
+				return InteractionResult.PASS;
+			BlockPos deathPositionExposed = deathPosition.get().pos();
+			for(int i = 0; i < 32; ++i) {
+				world.addParticle(ParticleTypes.PORTAL, deathPositionExposed.getX()+0.5, deathPositionExposed.getY()+3 + this.random.nextDouble() * 2.0, deathPositionExposed.getZ()+0.5, this.random.nextGaussian(), 0.0, this.random.nextGaussian());
+			}
+			player.teleportTo(deathPositionExposed.getX()+0.5,deathPositionExposed.getY()+3,deathPositionExposed.getZ()+0.5);
+			player.hurt(world.damageSources().fall(),5);
+			if (random.nextFloat() < 0.05F && world.getGameRules().getBoolean(GameRules.RULE_DOMOBSPAWNING)) {
+				Endermite endermite = (Endermite)EntityType.ENDERMITE.create(world);
+				if (endermite != null) {
+					endermite.moveTo(player.getX(), player.getY(), player.getZ(), player.getYRot(), player.getXRot());
+					world.addFreshEntity(endermite);
+				}
+			}
+			world.setBlock(pos, state.setValue(EndAnchorBlock.CHARGES, state.getValue(EndAnchorBlock.CHARGES) - 1), Block.UPDATE_ALL);
+			return InteractionResult.sidedSuccess(world.isClientSide);
+		}
+		else if(endAnchorType == EndAnchorType.LodeStoneTeleporter)
+		{
+			CompoundTag lodeStonePosTag = tag.getCompound("LodeStonePos");
+			int x = lodeStonePosTag.getInt("x");
+			int y = lodeStonePosTag.getInt("y");
+			int z = lodeStonePosTag.getInt("z");
+			BlockPos lodeStonePos = new BlockPos(x,y,z);
+			if(EndAnchorBlockEntity.isLodeStoneBlockSet(lodeStonePos,world,tag.getString("LodeStoneDimension")))
+			{
+				for(int i = 0; i < 32; ++i) {
+					world.addParticle(ParticleTypes.PORTAL, x+0.5, y+3 + this.random.nextDouble() * 2.0, z+0.5, this.random.nextGaussian(), 0.0, this.random.nextGaussian());
+				}
+				player.teleportTo(x+0.5,y+3,z+0.5);
+				player.hurt(world.damageSources().fall(),5);
+				if (random.nextFloat() < 0.05F && world.getGameRules().getBoolean(GameRules.RULE_DOMOBSPAWNING)) {
+					Endermite endermite = (Endermite)EntityType.ENDERMITE.create(world);
+					if (endermite != null) {
+						endermite.moveTo(player.getX(), player.getY(), player.getZ(), player.getYRot(), player.getXRot());
+						world.addFreshEntity(endermite);
+					}
+				}
+				world.setBlock(pos, state.setValue(EndAnchorBlock.CHARGES, state.getValue(EndAnchorBlock.CHARGES) - 1), Block.UPDATE_ALL);
+			}
+			else
+			{
+				if (!world.isClientSide) {
+					this.explode(state, world, pos);
+				}
+			}
+			return InteractionResult.sidedSuccess(world.isClientSide);
+		}
+		else
+		{
+			return  InteractionResult.PASS;
 		}
 	}
 
@@ -123,6 +190,7 @@ public class EndAnchorBlock extends Block implements EntityBlock {
 	}
 
 	private void explode(BlockState state, Level world, final BlockPos explodedPos) {
+		CompoundTag tag = ((EndAnchorBlockEntity)world.getBlockEntity(explodedPos)).getUpdateTag();
 		world.removeBlock(explodedPos, false);
 		Stream<Direction> var10000 = Direction.Plane.HORIZONTAL.stream();
 		Objects.requireNonNull(explodedPos);
@@ -146,9 +214,8 @@ public class EndAnchorBlock extends Block implements EntityBlock {
 				endermiteEntity.setDeltaMovement(new Vec3(world.random.nextDouble() * (world.random.nextBoolean() ? -1 : 1), world.random.nextDouble(), world.random.nextDouble() * (world.random.nextBoolean() ? -1 : 1)));
 				world.addFreshEntity(endermiteEntity);
 			}
-
 		}
-
+		popResource(world,explodedPos,EndAnchorBlockEntity.DetermineDrop(world,tag));
 	}
 
 	public static boolean isEnd(Level world) {
@@ -184,6 +251,7 @@ public class EndAnchorBlock extends Block implements EntityBlock {
 
 	protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
 		builder.add(CHARGES);
+
 	}
 
 	public boolean hasAnalogOutputSignal(BlockState state) {
@@ -197,6 +265,7 @@ public class EndAnchorBlock extends Block implements EntityBlock {
 	public int getAnalogOutputSignal(BlockState state, Level world, BlockPos pos) {
 		return Mth.floor((float)(state.getValue(CHARGES)) / 4.0F * (float)15);
 	}
+
 
 	public static Optional<Vec3> findRespawnPosition(EntityType<?> entity, CollisionGetter world, BlockPos pos) {
 		Optional<Vec3> optional = findRespawnPosition(entity, world, pos, true);
@@ -221,6 +290,8 @@ public class EndAnchorBlock extends Block implements EntityBlock {
 		return Optional.of(vec3d);
 	}
 
+
+
 	public boolean isPathfindable(BlockState state, BlockGetter world, BlockPos pos, PathComputationType type) {
 		return false;
 	}
@@ -233,6 +304,7 @@ public class EndAnchorBlock extends Block implements EntityBlock {
 
 	static {
 		CHARGES = BlockStateProperties.RESPAWN_ANCHOR_CHARGES;
+
 		VALID_HORIZONTAL_SPAWN_OFFSETS = ImmutableList.of(new Vec3i(0, 0, -1), new Vec3i(-1, 0, 0), new Vec3i(0, 0, 1), new Vec3i(1, 0, 0), new Vec3i(-1, 0, -1), new Vec3i(1, 0, -1), new Vec3i(-1, 0, 1), new Vec3i(1, 0, 1));
 		VALID_SPAWN_OFFSETS = (new Builder()).addAll(VALID_HORIZONTAL_SPAWN_OFFSETS).addAll(VALID_HORIZONTAL_SPAWN_OFFSETS.stream().map(Vec3i::below).iterator()).addAll(VALID_HORIZONTAL_SPAWN_OFFSETS.stream().map(Vec3i::above).iterator()).add((new Vec3i(0, 1, 0))).build();
 

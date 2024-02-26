@@ -13,6 +13,7 @@ import net.minecraft.world.level.material.MapColor;
 
 /**
  * @author KxmischesDomi | https://github.com/kxmischesdomi
+ * @author BataBo | https://github.com/BataBo/EndAnchorExtended
  * @since 1.0
  */
 public class ModBlocks {

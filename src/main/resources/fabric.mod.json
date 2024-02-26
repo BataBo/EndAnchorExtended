@@ -3,15 +3,16 @@
   "id": "just_end_anchor",
   "version": "${version}",
 
-  "name": "Just An End Anchor",
-  "description": "Adds a new End Anchor Item that makes it possible to respawn in the end!",
+  "name": "Just An End Anchor Extended",
+  "description": "Adds a new End Anchor Item that makes it possible to respawn and teleport to a lodestone in the end!",
   "authors": [
     "KxmischesDomi",
-    "Eudacye"
+    "Eudacye",
+    "BataBo"
   ],
   "contact": {
-    "sources": "https://github.com/KxmischesDomi/EndAnchor",
-    "issues": "https://github.com/KxmischesDomi/EndAnchor/issues",
+    "sources": "https://github.com/BataBo/EndAnchorExtended",
+    "issues": "https://github.com/BataBo/EndAnchorExtended/issues",
     "homepage": "https://www.curseforge.com/minecraft/mc-mods/just-an-end-anchor"
   },
 
